@@ -4,7 +4,6 @@ import pytest
 # helper (вспомогательная функция)
 # ------------------------------------------------------------------------------
 
-
 async def create_book(async_client, book_data):
     """Хелпер для создания книги и возврата (id, json-объект)."""
     resp = await async_client.post("/books/", json=book_data.model_dump())
@@ -17,7 +16,6 @@ async def create_book(async_client, book_data):
 # CRUD tests for /books/
 # ------------------------------------------------------------------------------
 
-@pytest.mark.asyncio
 async def test_create_book(async_client, book_data):
     """Тест создания книги"""
     book_id, data = await create_book(async_client, book_data)
@@ -28,7 +26,6 @@ async def test_create_book(async_client, book_data):
     assert data["id"] == book_id
 
 
-@pytest.mark.asyncio
 async def test_get_books(async_client):
     """Тест получения списка книг"""
     resp = await async_client.get("/books/")
@@ -36,7 +33,6 @@ async def test_get_books(async_client):
     assert isinstance(resp.json(), list)
 
 
-@pytest.mark.asyncio
 async def test_get_book(async_client, book_data):
     """Тест получения книги по `id`"""
     book_id, created = await create_book(async_client, book_data)
@@ -51,7 +47,6 @@ async def test_get_book(async_client, book_data):
     assert data["year"] == created["year"]
 
 
-@pytest.mark.asyncio
 async def test_update_book(async_client, book_data):
     """Тест изменения книги по `id`"""
     book_id, _ = await create_book(async_client, book_data)
@@ -70,7 +65,6 @@ async def test_update_book(async_client, book_data):
     assert data == updated
 
 
-@pytest.mark.asyncio
 async def test_delete_book(async_client, book_data):
     """Тест удаления книги по `id`"""
     book_id, _ = await create_book(async_client, book_data)
