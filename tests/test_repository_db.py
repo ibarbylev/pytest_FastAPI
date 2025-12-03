@@ -4,14 +4,13 @@ from app.db.repository import NotFoundError
 from unittest.mock import AsyncMock, MagicMock
 
 
-@pytest.mark.anyio
 async def test_create_book(repository):
     book = Book(id=1, title="Test Book", author="John Doe", year=2026)
     created = await repository.create(book)
     assert created.id == book.id
     assert created.title == book.title
 
-@pytest.mark.anyio
+
 async def test_get_all_books(repository):
     book1 = Book(id=1, title="Book1", author="A", year=2000)
     book2 = Book(id=2, title="Book2", author="B", year=2010)
@@ -23,7 +22,7 @@ async def test_get_all_books(repository):
     assert 1 in ids
     assert 2 in ids
 
-@pytest.mark.anyio
+
 async def test_get_book(repository):
     book = Book(id=1, title="Book1", author="A", year=2000)
     await repository.create(book)
@@ -32,12 +31,12 @@ async def test_get_book(repository):
     assert fetched.id == 1
     assert fetched.title == "Book1"
 
-@pytest.mark.anyio
+
 async def test_get_book_not_found(repository):
     result = await repository.get(999)
     assert result is None
 
-@pytest.mark.anyio
+
 async def test_update_book(repository):
     book = Book(id=1, title="Old Title", author="Old Author", year=1990)
     await repository.create(book)
@@ -47,7 +46,7 @@ async def test_update_book(repository):
     assert updated.title == "New Title"
     assert updated.author == "New Author"
 
-@pytest.mark.anyio
+
 async def test_update_book_not_found(repository):
     book = Book(id=999, title="X", author="Y", year=0)
     repository = MagicMock()
@@ -56,7 +55,7 @@ async def test_update_book_not_found(repository):
     with pytest.raises(NotFoundError):
         await repository.update(book)
 
-@pytest.mark.anyio
+
 async def test_delete_book(repository):
     book = Book(id=1, title="Book1", author="A", year=2000)
     await repository.create(book)
@@ -65,7 +64,7 @@ async def test_delete_book(repository):
     result = await repository.get(1)
     assert result is None
 
-@pytest.mark.anyio
+
 async def test_delete_book_not_found(repository):
     repository = MagicMock()
     repository.delete = AsyncMock(side_effect=NotFoundError)
