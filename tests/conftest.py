@@ -200,3 +200,75 @@ async def db_session(db_engine):
 @pytest_asyncio.fixture
 async def repository(db_session):
     return BookRepository(db_session)  # Создаём репозиторий с сессией БД
+
+
+
+# ------------------------------------------------------------------------------
+# Фикстуры для test_routes_db.py
+# ------------------------------------------------------------------------------
+
+
+
+import pytest
+from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
+from sqlalchemy.orm import sessionmaker
+
+from app.db.models import Base
+from app.db.repository import get_session
+from app.main import app
+
+# SQLite in-memory для тестов
+TEST_DATABASE_URL = "sqlite+aiosqlite:///:memory:"
+
+
+@pytest.fixture
+async def db_engine():
+    """
+    Создаёт in-memory SQLite движок и создаёт все таблицы.
+    """
+    engine = create_async_engine(TEST_DATABASE_URL, echo=False)
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+    yield engine
+    await engine.dispose()
+
+
+@pytest.fixture
+async def db_session(db_engine):
+    """
+    Асинхронная сессия SQLAlchemy для интеграционных тестов.
+    """
+    async_session = sessionmaker(
+        bind=db_engine,
+        class_=AsyncSession,
+        expire_on_commit=False,
+    )
+    async with async_session() as session:
+        yield session
+
+
+@pytest.fixture
+async def override_get_db(db_session):
+    """
+    Подмена зависимости FastAPI get_session, чтобы использовать тестовую базу.
+    """
+    from app.main import app
+    from app.db.repository import get_session
+
+    async def _override():
+        yield db_session
+
+    app.dependency_overrides[get_session] = _override
+    yield
+    app.dependency_overrides.clear()
+
+
+@pytest.fixture
+async def async_client_with_db(override_get_db):
+    """
+    Асинхронный клиент FastAPI для интеграционных тестов с реальной DB.
+    Использует ASGITransport для работы без реального HTTP сервера.
+    """
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as ac:
+        yield ac
