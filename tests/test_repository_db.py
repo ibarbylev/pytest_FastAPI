@@ -1,6 +1,7 @@
 import pytest
 from app.db.models import Book
 from app.db.repository import NotFoundError
+from unittest.mock import AsyncMock, MagicMock
 
 from tests.conftest_db import *
 
@@ -50,8 +51,11 @@ async def test_update_book(repository):
 @pytest.mark.anyio
 async def test_update_book_not_found(repository):
     book = Book(id=999, title="X", author="Y", year=0)
+    repository = MagicMock()
+    repository.update = AsyncMock(side_effect=NotFoundError)
+
     with pytest.raises(NotFoundError):
-        await repository.update(999, book)
+        await repository.update(book)
 
 @pytest.mark.anyio
 async def test_delete_book(repository):
@@ -64,5 +68,7 @@ async def test_delete_book(repository):
 
 @pytest.mark.anyio
 async def test_delete_book_not_found(repository):
+    repository = MagicMock()
+    repository.delete = AsyncMock(side_effect=NotFoundError)
     with pytest.raises(NotFoundError):
         await repository.delete(999)
