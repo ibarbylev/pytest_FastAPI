@@ -1,4 +1,4 @@
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict
 from typing import Optional
 from sqlalchemy import Column, Integer, String
 from sqlalchemy.orm import declarative_base
@@ -20,7 +20,4 @@ class Book(BaseModel):
     author: str
     year: Optional[int] = None
 
-    class Config:
-        # orm_mode = True  Устарело. Было в V1
-        # ниже - новая реализация orm_mode для V2
-        from_attributes = True # позволяет конвертировать из ORM объекта
+    model_config = ConfigDict(from_attributes=True)
