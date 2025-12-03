@@ -140,5 +140,5 @@ def book_data():
         id=1,
         title="Test Book",
         author="John Doe",
-        pages=123
+        year=2026
     )
