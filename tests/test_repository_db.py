@@ -3,7 +3,6 @@ from app.db.models import Book
 from app.db.repository import NotFoundError
 from unittest.mock import AsyncMock, MagicMock
 
-from tests.conftest_db import *
 
 @pytest.mark.anyio
 async def test_create_book(repository):
