@@ -25,7 +25,7 @@ project_root/
 
 import os
 
-ALLOWED_EXTENSIONS = {".py", ".ini"}   # ← Укажи нужные расширения
+ALLOWED_EXTENSIONS = {".py", ".ini", ".txt"}   # ← Укажи нужные расширения
 
 
 def is_allowed_file(filename):
