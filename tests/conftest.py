@@ -272,3 +272,43 @@ async def async_client_with_db(override_get_db):
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as ac:
         yield ac
+
+    import pytest
+    from httpx import AsyncClient, ASGITransport
+    from app.main import app
+
+    # ------------------------------------------------------------------------------
+    # fixtures
+    # ------------------------------------------------------------------------------
+
+    @pytest.fixture
+    async def async_client_with_db(override_get_db):
+        """Асинхронный клиент FastAPI для интеграционных тестов с реальной DB."""
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as ac:
+            yield ac
+
+    @pytest.fixture
+    def sample_books():
+        """Фикстура с тестовыми данными для книг"""
+        return [
+            {"id": 1, "title": "Интеграция", "author": "Тест Автор", "year": 2025},
+            {"id": 2, "title": "Вторая книга", "author": "Автор 2", "year": 2024},
+            {"id": 3, "title": "Старая книга", "author": "Автор 3", "year": 2023},
+            {"id": 4, "title": "Для удаления", "author": "Автор 4", "year": 2022},
+        ]
+
+    @pytest.fixture
+    async def created_book(async_client_with_db):
+        """
+        Фикстура для создания книги и возврата (id, data).
+        Можно параметризовать в тестах, чтобы создавать разные книги.
+        """
+
+        async def _create(book_data: dict):
+            resp = await async_client_with_db.post("/books/", json=book_data)
+            assert resp.status_code == 200
+            data = resp.json()
+            return data["id"], data
+
+        return _create
