@@ -47,7 +47,7 @@ async def test_update_book(repository):
     assert updated.author == "New Author"
 
 
-async def test_update_book_not_found(repository):
+async def test_update_book_not_found():
     book = Book(id=999, title="X", author="Y", year=0)
     repository = MagicMock()
     repository.update = AsyncMock(side_effect=NotFoundError)
@@ -65,7 +65,7 @@ async def test_delete_book(repository):
     assert result is None
 
 
-async def test_delete_book_not_found(repository):
+async def test_delete_book_not_found():
     repository = MagicMock()
     repository.delete = AsyncMock(side_effect=NotFoundError)
     with pytest.raises(NotFoundError):

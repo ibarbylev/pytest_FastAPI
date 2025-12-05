@@ -1,31 +1,37 @@
+import asyncio
 import pytest
+import pytest_asyncio
+from unittest.mock import AsyncMock, MagicMock
 from fastapi.testclient import TestClient
 from httpx import AsyncClient, ASGITransport
+from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
+from sqlalchemy.orm import sessionmaker
+from sqlalchemy import text
 
-from unittest.mock import AsyncMock, MagicMock
+from app.db.models import Base, Book
 from app.db.repository import BookRepository, get_session
-from app.db.models import Book
 from app.main import app
+
+# ------------------------------------------------------------------------------
+# Event loop для async-тестов
+# ------------------------------------------------------------------------------
+@pytest.fixture(scope="session")
+def event_loop():
+    loop = asyncio.get_event_loop_policy().new_event_loop()
+    yield loop
+    loop.close()
 
 # ------------------------------------------------------------------------------
 # Клиенты для тестов
 # ------------------------------------------------------------------------------
-
 @pytest.fixture
 def client():
-    """
-    Синхронный клиент FastAPI для тестов.
-    Используется для обычных GET/POST запросов без async.
-    """
+    """Синхронный клиент FastAPI"""
     return TestClient(app)
-
 
 @pytest.fixture
 async def async_client():
-    """
-    Асинхронный клиент FastAPI для тестов.
-    Используется для async-эндпоинтов.
-    """
+    """Асинхронный клиент FastAPI без базы"""
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as ac:
         yield ac
@@ -33,14 +39,9 @@ async def async_client():
 # ------------------------------------------------------------------------------
 # Моки для базы данных и сессий
 # ------------------------------------------------------------------------------
-
 @pytest.fixture
 def mock_session():
-    """
-    Мок AsyncSession для тестов.
-    Здесь можно мокировать методы add, commit, refresh, delete и execute.
-    Дополнительно задаются фиктивные результаты для get/get_all.
-    """
+    """Мок AsyncSession с заглушками для get/get_all"""
     session = AsyncMock()
     session.add = AsyncMock()
     session.commit = AsyncMock()
@@ -48,25 +49,18 @@ def mock_session():
     session.delete = AsyncMock()
     session.execute = AsyncMock()
 
-    # Заглушки для GET-запросов
     session.get_all_result = [
         {"id": 1, "title": "Mock Book", "author": "John", "pages": 100}
     ]
     session.get_result = {
-        "id": 1,
-        "title": "Mock Book",
-        "author": "John",
-        "pages": 100,
+        "id": 1, "title": "Mock Book", "author": "John", "pages": 100,
     }
 
     return session
 
 @pytest.fixture(autouse=True)
 def override_get_session(mock_session):
-    """
-    Перекрытие зависимости get_session для FastAPI.
-    Все эндпоинты будут использовать mock_session вместо реальной базы.
-    """
+    """Перекрытие get_session для FastAPI (все эндпоинты используют мок)"""
     async def _override():
         yield mock_session
 
@@ -77,16 +71,10 @@ def override_get_session(mock_session):
 # ------------------------------------------------------------------------------
 # Мок репозитория с динамическим списком книг
 # ------------------------------------------------------------------------------
-
 @pytest.fixture(autouse=True)
 def mock_repo():
-    """
-    Мок BookRepository для тестов CRUD.
-    Используется внутренний список books, который изменяется методами create/update/delete.
-    Возвращаемые объекты — реальные Book, чтобы FastAPI корректно сериализовал их в JSON.
-    """
+    """Мок BookRepository с внутренним списком книг"""
     books = []
-
     repo = MagicMock(spec=BookRepository)
 
     async def create(book: Book):
@@ -121,21 +109,15 @@ def mock_repo():
     repo.update = AsyncMock(side_effect=update)
     repo.delete = AsyncMock(side_effect=delete)
 
-    # Перехватываем конструктор BookRepository, чтобы возвращать мок
     BookRepository.__new__ = lambda cls, session: repo
-
     yield
 
 # ------------------------------------------------------------------------------
 # Фикстуры с тестовыми данными
 # ------------------------------------------------------------------------------
-
 @pytest.fixture
 def book_data():
-    """
-    Возвращает объект Book для тестов.
-    Используется во всех CRUD тестах как шаблон данных.
-    """
+    """Возвращает объект Book для тестов"""
     return Book(
         id=1,
         title="Test Book",
@@ -143,33 +125,24 @@ def book_data():
         year=2026
     )
 
+@pytest.fixture
+def sample_books():
+    """Фикстура с тестовыми книгами (ORM объекты)"""
+    return [
+        Book(id=1, title="Интеграция", author="Автор 1", year=2025),
+        Book(id=2, title="Вторая книга", author="Автор 2", year=2024),
+        Book(id=3, title="Старая книга", author="Автор 3", year=2023),
+        Book(id=4, title="Для удаления", author="Автор 4", year=2022),
+    ]
+
 # ------------------------------------------------------------------------------
-# Фикстуры для test_repository_db
+# In-memory SQLite база для интеграционных тестов
 # ------------------------------------------------------------------------------
-
-import asyncio
-import pytest
-import pytest_asyncio
-from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
-from sqlalchemy.orm import sessionmaker
-from sqlalchemy import text
-from app.db.models import Base
-
-
-@pytest.fixture(scope="session")
-def event_loop():
-    loop = asyncio.get_event_loop_policy().new_event_loop()
-    yield loop
-    loop.close()
+TEST_DATABASE_URL = "sqlite+aiosqlite:///:memory:"
 
 @pytest_asyncio.fixture(scope="session")
 async def db_engine():
-    engine = create_async_engine(
-        "sqlite+aiosqlite:///:memory:",
-        echo=False,
-        future=True,
-        connect_args={"check_same_thread": False}  # важно
-    )
+    engine = create_async_engine(TEST_DATABASE_URL, echo=False, future=True)
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
     yield engine
@@ -177,84 +150,24 @@ async def db_engine():
 
 @pytest_asyncio.fixture
 async def db_session(db_engine):
-    async_session = sessionmaker(
-        bind=db_engine,
-        class_=AsyncSession,
-        expire_on_commit=False
-    )
-    async with async_session() as session:
-        # очищаем таблицу перед тестом
-        await session.execute(text("DELETE FROM books"))
-        await session.commit()
-
-        # --- проверка: вывести все id книг перед тестом ---
-        result = await session.execute(text("SELECT id FROM books"))
-        ids = [row[0] for row in result.fetchall()]
-        print("Books before test:", ids)
-        # -----------------------------------------------------
-
-        yield session
-        await session.rollback()
-
-
-@pytest_asyncio.fixture
-async def repository(db_session):
-    return BookRepository(db_session)  # Создаём репозиторий с сессией БД
-
-
-
-# ------------------------------------------------------------------------------
-# Фикстуры для test_routes_db.py
-# ------------------------------------------------------------------------------
-
-
-
-import pytest
-from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
-from sqlalchemy.orm import sessionmaker
-
-from app.db.models import Base
-from app.db.repository import get_session
-from app.main import app
-
-# SQLite in-memory для тестов
-TEST_DATABASE_URL = "sqlite+aiosqlite:///:memory:"
-
-
-@pytest.fixture
-async def db_engine():
-    """
-    Создаёт in-memory SQLite движок и создаёт все таблицы.
-    """
-    engine = create_async_engine(TEST_DATABASE_URL, echo=False)
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
-    yield engine
-    await engine.dispose()
-
-
-@pytest.fixture
-async def db_session(db_engine):
-    """
-    Асинхронная сессия SQLAlchemy для интеграционных тестов.
-    """
     async_session = sessionmaker(
         bind=db_engine,
         class_=AsyncSession,
         expire_on_commit=False,
     )
     async with async_session() as session:
+        await session.execute(text("DELETE FROM books"))
+        await session.commit()
         yield session
+        await session.rollback()
 
+@pytest_asyncio.fixture
+async def repository(db_session):
+    return BookRepository(db_session)
 
-@pytest.fixture
+@pytest_asyncio.fixture
 async def override_get_db(db_session):
-    """
-    Подмена зависимости FastAPI get_session, чтобы использовать тестовую базу.
-    """
-    from app.main import app
-    from app.db.repository import get_session
-
+    """Подмена зависимости FastAPI get_session для интеграционных тестов"""
     async def _override():
         yield db_session
 
@@ -262,53 +175,27 @@ async def override_get_db(db_session):
     yield
     app.dependency_overrides.clear()
 
-
-@pytest.fixture
+@pytest_asyncio.fixture
 async def async_client_with_db(override_get_db):
-    """
-    Асинхронный клиент FastAPI для интеграционных тестов с реальной DB.
-    Использует ASGITransport для работы без реального HTTP сервера.
-    """
+    """Асинхронный клиент FastAPI с реальной DB"""
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as ac:
         yield ac
 
-    import pytest
-    from httpx import AsyncClient, ASGITransport
-    from app.main import app
+@pytest_asyncio.fixture
+async def created_book(async_client_with_db):
+    """Фикстура для создания книги через эндпоинт"""
+    async def _create(book_obj):
+        if hasattr(book_obj, "model_dump"):
+            payload = book_obj.model_dump()
+        elif hasattr(book_obj, "__dict__"):
+            payload = {k: v for k, v in vars(book_obj).items() if k in ("title", "author", "year")}
+        else:
+            payload = book_obj
 
-    # ------------------------------------------------------------------------------
-    # fixtures
-    # ------------------------------------------------------------------------------
+        resp = await async_client_with_db.post("/books/", json=payload)
+        assert resp.status_code == 200, f"Create book failed: {resp.text}"
+        data = resp.json()
+        return data["id"], data
 
-    @pytest.fixture
-    async def async_client_with_db(override_get_db):
-        """Асинхронный клиент FastAPI для интеграционных тестов с реальной DB."""
-        transport = ASGITransport(app=app)
-        async with AsyncClient(transport=transport, base_url="http://test") as ac:
-            yield ac
-
-    @pytest.fixture
-    def sample_books():
-        """Фикстура с тестовыми данными для книг"""
-        return [
-            {"id": 1, "title": "Интеграция", "author": "Тест Автор", "year": 2025},
-            {"id": 2, "title": "Вторая книга", "author": "Автор 2", "year": 2024},
-            {"id": 3, "title": "Старая книга", "author": "Автор 3", "year": 2023},
-            {"id": 4, "title": "Для удаления", "author": "Автор 4", "year": 2022},
-        ]
-
-    @pytest.fixture
-    async def created_book(async_client_with_db):
-        """
-        Фикстура для создания книги и возврата (id, data).
-        Можно параметризовать в тестах, чтобы создавать разные книги.
-        """
-
-        async def _create(book_data: dict):
-            resp = await async_client_with_db.post("/books/", json=book_data)
-            assert resp.status_code == 200
-            data = resp.json()
-            return data["id"], data
-
-        return _create
+    return _create
