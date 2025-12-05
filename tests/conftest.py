@@ -12,18 +12,18 @@ from app.db.models import Base, Book
 from app.db.repository import BookRepository, get_session
 from app.main import app
 
-# ------------------------------------------------------------------------------
+# ==============================================================================
 # Event loop для async-тестов
-# ------------------------------------------------------------------------------
+# ==============================================================================
 @pytest.fixture(scope="session")
 def event_loop():
     loop = asyncio.get_event_loop_policy().new_event_loop()
     yield loop
     loop.close()
 
-# ------------------------------------------------------------------------------
+# ==============================================================================
 # Клиенты для тестов
-# ------------------------------------------------------------------------------
+# ==============================================================================
 @pytest.fixture
 def client():
     """Синхронный клиент FastAPI"""
@@ -31,17 +31,30 @@ def client():
 
 @pytest.fixture
 async def async_client():
-    """Асинхронный клиент FastAPI без базы"""
+    """Асинхронный клиент FastAPI (без реальной БД)"""
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as ac:
         yield ac
 
-# ------------------------------------------------------------------------------
-# Моки для базы данных и сессий
-# ------------------------------------------------------------------------------
+# ==============================================================================
+# Универсальный хелпер создания книги через API (неинтеграционные тесты)
+# ==============================================================================
+@pytest.fixture
+def create_book(async_client):
+    async def _create(book_data):
+        resp = await async_client.post("/books/", json=book_data.model_dump())
+        assert resp.status_code == 200
+        data = resp.json()
+        return data["id"], data
+
+    return _create
+
+# ==============================================================================
+# Моки: сессия и репозиторий
+# ==============================================================================
 @pytest.fixture
 def mock_session():
-    """Мок AsyncSession с заглушками для get/get_all"""
+    """Мок AsyncSession"""
     session = AsyncMock()
     session.add = AsyncMock()
     session.commit = AsyncMock()
@@ -60,7 +73,7 @@ def mock_session():
 
 @pytest.fixture(autouse=True)
 def override_get_session(mock_session):
-    """Перекрытие get_session для FastAPI (все эндпоинты используют мок)"""
+    """Все эндпоинты используют мок-сессию"""
     async def _override():
         yield mock_session
 
@@ -68,9 +81,6 @@ def override_get_session(mock_session):
     yield
     app.dependency_overrides.clear()
 
-# ------------------------------------------------------------------------------
-# Мок репозитория с динамическим списком книг
-# ------------------------------------------------------------------------------
 @pytest.fixture(autouse=True)
 def mock_repo():
     """Мок BookRepository с внутренним списком книг"""
@@ -85,10 +95,7 @@ def mock_repo():
         return books
 
     async def get(book_id: int):
-        for b in books:
-            if b.id == book_id:
-                return b
-        return None
+        return next((b for b in books if b.id == book_id), None)
 
     async def update(book_id: int, book: Book):
         for i, b in enumerate(books):
@@ -112,12 +119,11 @@ def mock_repo():
     BookRepository.__new__ = lambda cls, session: repo
     yield
 
-# ------------------------------------------------------------------------------
-# Фикстуры с тестовыми данными
-# ------------------------------------------------------------------------------
+# ==============================================================================
+# Тестовые данные
+# ==============================================================================
 @pytest.fixture
 def book_data():
-    """Возвращает объект Book для тестов"""
     return Book(
         id=1,
         title="Test Book",
@@ -127,7 +133,6 @@ def book_data():
 
 @pytest.fixture
 def sample_books():
-    """Фикстура с тестовыми книгами (ORM объекты)"""
     return [
         Book(id=1, title="Интеграция", author="Автор 1", year=2025),
         Book(id=2, title="Вторая книга", author="Автор 2", year=2024),
@@ -135,9 +140,9 @@ def sample_books():
         Book(id=4, title="Для удаления", author="Автор 4", year=2022),
     ]
 
-# ------------------------------------------------------------------------------
-# In-memory SQLite база для интеграционных тестов
-# ------------------------------------------------------------------------------
+# ==============================================================================
+# Реальная in-memory SQLite база (для интеграционных тестов)
+# ==============================================================================
 TEST_DATABASE_URL = "sqlite+aiosqlite:///:memory:"
 
 @pytest_asyncio.fixture(scope="session")
@@ -165,9 +170,11 @@ async def db_session(db_engine):
 async def repository(db_session):
     return BookRepository(db_session)
 
+# ==============================================================================
+# Интеграционные фикстуры
+# ==============================================================================
 @pytest_asyncio.fixture
 async def override_get_db(db_session):
-    """Подмена зависимости FastAPI get_session для интеграционных тестов"""
     async def _override():
         yield db_session
 
@@ -177,21 +184,18 @@ async def override_get_db(db_session):
 
 @pytest_asyncio.fixture
 async def async_client_with_db(override_get_db):
-    """Асинхронный клиент FastAPI с реальной DB"""
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as ac:
         yield ac
 
 @pytest_asyncio.fixture
 async def created_book(async_client_with_db):
-    """Фикстура для создания книги через эндпоинт"""
+    """Фабрика создания книги через реальную БД"""
     async def _create(book_obj):
         if hasattr(book_obj, "model_dump"):
             payload = book_obj.model_dump()
-        elif hasattr(book_obj, "__dict__"):
-            payload = {k: v for k, v in vars(book_obj).items() if k in ("title", "author", "year")}
         else:
-            payload = book_obj
+            payload = {k: v for k, v in vars(book_obj).items() if k in ("title", "author", "year")}
 
         resp = await async_client_with_db.post("/books/", json=payload)
         assert resp.status_code == 200, f"Create book failed: {resp.text}"

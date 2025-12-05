@@ -1,20 +1,14 @@
 import pytest
 
 # ----------------------------------------------------------------------
-# Helper
+# Fixture factory for creating a book
 # ----------------------------------------------------------------------
-async def create_book(async_client, book_data):
-    """Создание книги через эндпоинт и возврат id и json"""
-    resp = await async_client.post("/books/", json=book_data.model_dump())
-    assert resp.status_code == 200
-    data = resp.json()
-    return data["id"], data
 
 # ----------------------------------------------------------------------
 # CRUD tests
 # ----------------------------------------------------------------------
-async def test_create_book(async_client, book_data):
-    book_id, data = await create_book(async_client, book_data)
+async def test_create_book(async_client, book_data, create_book):
+    book_id, data = await create_book(book_data)
     assert data["id"] == book_id
     assert data["title"] == book_data.title
     assert data["author"] == book_data.author
@@ -27,8 +21,8 @@ async def test_get_books(async_client):
     assert isinstance(resp.json(), list)
 
 
-async def test_get_book(async_client, book_data):
-    book_id, created = await create_book(async_client, book_data)
+async def test_get_book(async_client, book_data, create_book):
+    book_id, created = await create_book(book_data)
     resp = await async_client.get(f"/books/{book_id}")
     assert resp.status_code == 200
     data = resp.json()
@@ -38,8 +32,8 @@ async def test_get_book(async_client, book_data):
     assert data["year"] == created["year"]
 
 
-async def test_update_book(async_client, book_data):
-    book_id, _ = await create_book(async_client, book_data)
+async def test_update_book(async_client, book_data, create_book):
+    book_id, _ = await create_book(book_data)
     updated = {
         "id": book_id,
         "title": "Updated Book",
@@ -52,8 +46,8 @@ async def test_update_book(async_client, book_data):
     assert data == updated
 
 
-async def test_delete_book(async_client, book_data):
-    book_id, _ = await create_book(async_client, book_data)
+async def test_delete_book(async_client, book_data, create_book):
+    book_id, _ = await create_book(book_data)
     resp = await async_client.delete(f"/books/{book_id}")
     assert resp.status_code == 200
     assert resp.json()["message"] == "Book deleted"
